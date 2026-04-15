@@ -1,0 +1,48 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: lint & validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck libxml2-utils php-cli
+
+      - name: Validate plugins/uv.plg is well-formed XML
+        run: xmllint --noout plugins/uv.plg
+
+      - name: Bash syntax + shellcheck
+        run: |
+          set -e
+          for f in \
+            source/usr/local/emhttp/plugins/uv/scripts/install_uv.sh \
+            source/usr/local/emhttp/plugins/uv/scripts/remove_uv.sh \
+            scripts/build-plg.sh; do
+            bash -n "$f"
+            shellcheck "$f"
+          done
+
+      - name: PHP lint
+        run: |
+          set -e
+          for f in source/usr/local/emhttp/plugins/uv/include/*.php; do
+            php -l "$f"
+          done
+
+      - name: Ensure plugins/uv.plg is in sync with source/
+        run: |
+          # Re-run the build script with the version currently in the committed
+          # .plg, then diff. Any drift between source/ and the inlined content
+          # inside plugins/uv.plg will fail CI.
+          version=$(grep -Po '<!ENTITY version\s+"\K[^"]+' plugins/uv.plg)
+          scripts/build-plg.sh "$version"
+          git diff --exit-code plugins/uv.plg

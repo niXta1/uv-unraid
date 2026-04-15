@@ -1,0 +1,490 @@
+<?xml version='1.0' standalone='yes'?>
+
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "uv">
+<!ENTITY author    "nixta1">
+<!ENTITY version   "2026.04.15">
+<!ENTITY launch    "Settings/uv">
+<!ENTITY pluginURL "https://raw.githubusercontent.com/nixta1/uv-unraid/main/plugins/&name;.plg">
+<!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
+<!ENTITY plgPath   "/boot/config/plugins/&name;">
+]>
+
+<PLUGIN
+  name="&name;"
+  author="&author;"
+  version="&version;"
+  launch="&launch;"
+  pluginURL="&pluginURL;"
+  min="6.11.0"
+  support="https://github.com/nixta1/uv-unraid/issues">
+
+<CHANGES>
+##&name;
+
+###2026.04.15
+- Generated from source/ by scripts/build-plg.sh
+- Installs uv + uvx from the Astral GitHub releases
+- Caches the binary on /boot/config/plugins/&name;/bin/ across reboots
+- Adds a Settings page showing the installed version
+</CHANGES>
+
+<!-- ==========================================================
+     webGUI files (inlined from source/)
+     ========================================================== -->
+
+<FILE Name="/usr/local/emhttp/plugins/uv/README.md" Mode="0644">
+<INLINE>
+<![CDATA[
+# uv
+
+Installs [uv](https://github.com/astral-sh/uv), Astral's extremely fast Python package
+and project manager, into `/usr/local/bin` on Unraid.
+
+The plugin downloads the official upstream binary from Astral's GitHub releases
+(`uv-x86_64-unknown-linux-gnu.tar.gz`) on first install, caches it on the USB flash
+drive at `/boot/config/plugins/uv/bin/`, and restores it to `/usr/local/bin/uv` and
+`/usr/local/bin/uvx` on every boot — so no network access is required after the first
+install.
+
+## Usage
+
+Open a terminal and run:
+
+```
+uv --version
+uv python install 3.12
+uv venv
+```
+
+A Settings page is available under **Settings → User Utilities → uv** where you can
+see the installed version and trigger an update.
+
+## Links
+
+- Upstream project: <https://github.com/astral-sh/uv>
+- Plugin source: <https://github.com/nixta1/uv-unraid>
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/uv/include/helpers.php" Mode="0644">
+<INLINE>
+<![CDATA[
+<?PHP
+/*
+ * Copyright 2026, uv-unraid contributors
+ *
+ * PHP helpers used by the uv settings page. Kept intentionally small — the
+ * plugin has no configurable settings, just a status display and an
+ * "Update now" action.
+ */
+
+function uv_binary_path(): string {
+    return '/usr/local/bin/uv';
+}
+
+function uv_cache_dir(): string {
+    return '/boot/config/plugins/uv';
+}
+
+function uv_installed_version(): ?string {
+    $bin = uv_binary_path();
+    if (!is_executable($bin)) {
+        return null;
+    }
+    $out = @shell_exec(escapeshellarg($bin) . ' --version 2>/dev/null');
+    if ($out === null || $out === false) {
+        return null;
+    }
+    // `uv 0.5.11 (abc1234 2025-01-01)` → `0.5.11`
+    $out = trim($out);
+    if (preg_match('/^uv\s+(\S+)/', $out, $m)) {
+        return $m[1];
+    }
+    return $out !== '' ? $out : null;
+}
+
+function uv_cached_version(): ?string {
+    $f = uv_cache_dir() . '/version';
+    if (!is_readable($f)) {
+        return null;
+    }
+    $v = trim((string) @file_get_contents($f));
+    return $v !== '' ? $v : null;
+}
+
+function uv_cached_binary_exists(): bool {
+    return is_file(uv_cache_dir() . '/bin/uv');
+}
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/uv/include/update.php" Mode="0644">
+<INLINE>
+<![CDATA[
+<?PHP
+/*
+ * Copyright 2026, uv-unraid contributors
+ *
+ * Endpoint hit by the "Update now" button on the uv settings page.
+ * Runs the install script with --update and streams the output back.
+ */
+
+header('Content-Type: text/plain; charset=utf-8');
+
+$script = '/usr/local/emhttp/plugins/uv/scripts/install_uv.sh';
+
+if (!is_executable($script)) {
+    http_response_code(500);
+    echo "install script not found or not executable: $script\n";
+    exit;
+}
+
+// Run the installer with --update and capture combined stdout/stderr.
+$descriptors = [
+    1 => ['pipe', 'w'],
+    2 => ['redirect', 1],
+];
+$proc = proc_open([$script, '--update'], $descriptors, $pipes);
+if (!is_resource($proc)) {
+    http_response_code(500);
+    echo "failed to launch install script\n";
+    exit;
+}
+
+while (!feof($pipes[1])) {
+    echo fgets($pipes[1]);
+    @ob_flush();
+    @flush();
+}
+
+fclose($pipes[1]);
+$status = proc_close($proc);
+echo "\n[exit $status]\n";
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/uv/scripts/install_uv.sh" Mode="0755">
+<INLINE>
+<![CDATA[
+#!/bin/bash
+#
+# install_uv.sh — download and install Astral's `uv` binary on Unraid.
+#
+# This script is idempotent. It is invoked:
+#   1. From the .plg file during plugin installation.
+#   2. On every Unraid boot, because Unraid re-runs installed .plg files from
+#      /boot/config/plugins/ as part of its init sequence.
+#   3. Manually from the Settings page "Update now" button.
+#
+# Layout on disk:
+#   /boot/config/plugins/uv/            — persistent state on the USB flash
+#   /boot/config/plugins/uv/bin/uv      — cached binary (survives reboots)
+#   /boot/config/plugins/uv/bin/uvx     — cached companion binary
+#   /boot/config/plugins/uv/version     — cached version string (e.g. 0.5.11)
+#   /usr/local/bin/uv                   — live symlink/copy (lost on reboot)
+#
+# Usage:
+#   install_uv.sh                 # install cached, or fetch latest if no cache
+#   install_uv.sh --update        # always fetch the latest release
+#   install_uv.sh --version 0.5.0 # install a specific version
+
+set -euo pipefail
+
+PLUGIN=uv
+CACHE_DIR=/boot/config/plugins/${PLUGIN}
+BIN_CACHE=${CACHE_DIR}/bin
+VERSION_FILE=${CACHE_DIR}/version
+TARGET_DIR=/usr/local/bin
+ARCH_TARBALL=uv-x86_64-unknown-linux-gnu.tar.gz
+RELEASES_API=https://api.github.com/repos/astral-sh/uv/releases/latest
+RELEASES_DL=https://github.com/astral-sh/uv/releases/download
+
+mkdir -p "${BIN_CACHE}"
+
+log()  { printf '[uv] %s\n' "$*"; }
+err()  { printf '[uv] error: %s\n' "$*" >&2; }
+
+FORCE_UPDATE=0
+WANTED_VERSION=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --update)  FORCE_UPDATE=1; shift ;;
+    --version) WANTED_VERSION=${2:?missing version}; shift 2 ;;
+    --help|-h)
+      sed -n '2,30p' "$0"; exit 0 ;;
+    *)
+      err "unknown argument: $1"; exit 2 ;;
+  esac
+done
+
+resolve_latest_version() {
+  # Returns the latest release tag (without a leading 'v') or empty on failure.
+  local tag
+  tag=$(curl -fsSL --max-time 15 "${RELEASES_API}" 2>/dev/null \
+          | grep -Po '"tag_name"\s*:\s*"\K[^"]+' || true)
+  echo "${tag#v}"
+}
+
+install_from_cache() {
+  if [[ -x ${BIN_CACHE}/uv ]]; then
+    install -m 0755 "${BIN_CACHE}/uv"  "${TARGET_DIR}/uv"
+    [[ -x ${BIN_CACHE}/uvx ]] && install -m 0755 "${BIN_CACHE}/uvx" "${TARGET_DIR}/uvx"
+    local v="unknown"
+    [[ -f ${VERSION_FILE} ]] && v=$(<"${VERSION_FILE}")
+    log "restored cached uv ${v} -> ${TARGET_DIR}/uv"
+    return 0
+  fi
+  return 1
+}
+
+download_and_cache() {
+  local version=$1
+  local url="${RELEASES_DL}/${version}/${ARCH_TARBALL}"
+  local tmp
+  tmp=$(mktemp -d) || { err "mktemp failed"; return 1; }
+  # shellcheck disable=SC2064
+  trap "rm -rf '${tmp}'" RETURN
+
+  log "downloading ${url}"
+  if ! curl -fsSL --max-time 120 -o "${tmp}/${ARCH_TARBALL}" "${url}"; then
+    err "download failed"
+    return 1
+  fi
+
+  if ! tar -xzf "${tmp}/${ARCH_TARBALL}" -C "${tmp}"; then
+    err "extraction failed"
+    return 1
+  fi
+
+  local src_uv src_uvx
+  src_uv=$(find "${tmp}" -type f -name uv  | head -n1)
+  src_uvx=$(find "${tmp}" -type f -name uvx | head -n1)
+
+  if [[ -z ${src_uv} ]]; then
+    err "uv binary not found inside tarball"
+    return 1
+  fi
+
+  install -m 0755 "${src_uv}"  "${BIN_CACHE}/uv"
+  install -m 0755 "${src_uv}"  "${TARGET_DIR}/uv"
+  if [[ -n ${src_uvx} ]]; then
+    install -m 0755 "${src_uvx}" "${BIN_CACHE}/uvx"
+    install -m 0755 "${src_uvx}" "${TARGET_DIR}/uvx"
+  fi
+
+  printf '%s\n' "${version}" > "${VERSION_FILE}"
+  log "installed uv ${version}"
+}
+
+# ---- main -----------------------------------------------------------------
+
+if [[ ${FORCE_UPDATE} -eq 0 && -z ${WANTED_VERSION} ]]; then
+  # Normal boot path: prefer the cache, no network round-trip.
+  if install_from_cache; then
+    exit 0
+  fi
+fi
+
+# We need to hit the network.
+if [[ -z ${WANTED_VERSION} ]]; then
+  log "resolving latest uv release..."
+  WANTED_VERSION=$(resolve_latest_version)
+fi
+
+if [[ -z ${WANTED_VERSION} ]]; then
+  err "could not resolve a uv version to install"
+  # Last-ditch fallback: restore whatever is cached.
+  install_from_cache || exit 1
+  exit 0
+fi
+
+if download_and_cache "${WANTED_VERSION}"; then
+  exit 0
+fi
+
+err "download failed; falling back to cached binary"
+install_from_cache || exit 1
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/uv/scripts/remove_uv.sh" Mode="0755">
+<INLINE>
+<![CDATA[
+#!/bin/bash
+#
+# remove_uv.sh — remove the uv binaries, cache and webGUI files.
+#
+# Called from the <FILE Method="remove"> block of uv.plg when the user
+# uninstalls the plugin from the Unraid Plugin Manager.
+
+set -euo pipefail
+
+PLUGIN=uv
+
+echo "[uv] removing binaries from /usr/local/bin"
+rm -f /usr/local/bin/uv /usr/local/bin/uvx
+
+echo "[uv] removing cache directory /boot/config/plugins/${PLUGIN}"
+rm -rf "/boot/config/plugins/${PLUGIN}"
+
+echo "[uv] removing webGUI files"
+rm -rf "/usr/local/emhttp/plugins/${PLUGIN}"
+
+echo "[uv] uninstalled."
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/uv/uv.page" Mode="0644">
+<INLINE>
+<![CDATA[
+Menu="OtherSettings"
+Type="xmenu"
+Title="uv"
+Icon="icon-uv.png"
+Tag="bolt"
+---
+<?PHP
+/*
+ * Copyright 2026, uv-unraid contributors
+ *
+ * Settings page for the uv Unraid plugin. Displays the installed uv version
+ * and exposes an "Update now" button that re-runs install_uv.sh --update.
+ */
+
+require_once '/usr/local/emhttp/plugins/uv/include/helpers.php';
+
+$installed = uv_installed_version();
+$cached    = uv_cached_version();
+$bin       = uv_binary_path();
+$cacheDir  = uv_cache_dir();
+$installedDisplay = $installed ?? _('Not installed');
+$cachedDisplay    = $cached    ?? _('none');
+?>
+
+<style>
+.uv-status td:first-child { white-space: nowrap; padding-right: 1em; }
+.uv-status code            { font-size: 0.95em; }
+#uv-log {
+    display: none;
+    white-space: pre-wrap;
+    background: #111;
+    color: #eee;
+    padding: 10px;
+    margin-top: 10px;
+    max-height: 400px;
+    overflow: auto;
+    font-family: monospace;
+    font-size: 12px;
+}
+</style>
+
+<table class="uv-status">
+  <tr>
+    <td>_(Installed version)_:</td>
+    <td><strong><?= htmlspecialchars($installedDisplay) ?></strong></td>
+  </tr>
+  <tr>
+    <td>_(Cached on USB)_:</td>
+    <td><?= htmlspecialchars($cachedDisplay) ?></td>
+  </tr>
+  <tr>
+    <td>_(Binary path)_:</td>
+    <td><code><?= htmlspecialchars($bin) ?></code></td>
+  </tr>
+  <tr>
+    <td>_(Cache directory)_:</td>
+    <td><code><?= htmlspecialchars($cacheDir) ?></code></td>
+  </tr>
+  <tr>
+    <td>_(Upstream project)_:</td>
+    <td><a href="https://github.com/astral-sh/uv" target="_blank">astral-sh/uv</a></td>
+  </tr>
+</table>
+
+&nbsp;
+
+<form markdown="1" name="uv_update" onsubmit="uv_update(); return false;">
+_(Update uv to the latest release)_:
+: <input type="submit" value="_(Update now)_">
+</form>
+
+<pre id="uv-log"></pre>
+
+<script>
+function uv_update() {
+    var log = document.getElementById('uv-log');
+    log.style.display = 'block';
+    log.textContent = '> running /usr/local/emhttp/plugins/uv/scripts/install_uv.sh --update\n';
+    $.ajax({
+        url: '/plugins/uv/include/update.php',
+        method: 'POST',
+        dataType: 'text'
+    }).done(function (data) {
+        log.textContent += data;
+        log.scrollTop = log.scrollHeight;
+        setTimeout(function () { location.reload(); }, 1500);
+    }).fail(function (xhr) {
+        log.textContent += '\nrequest failed: ' + xhr.status + ' ' + xhr.statusText;
+    });
+}
+</script>
+]]>
+</INLINE>
+</FILE>
+
+<!-- ==========================================================
+     Install: runs on plugin install and on every boot.
+     ========================================================== -->
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+set -e
+# Ensure the script is executable even on filesystems that ignore Mode=.
+chmod 0755 /usr/local/emhttp/plugins/uv/scripts/install_uv.sh
+chmod 0755 /usr/local/emhttp/plugins/uv/scripts/remove_uv.sh
+
+/usr/local/emhttp/plugins/uv/scripts/install_uv.sh || true
+
+echo ""
+echo "-----------------------------------------------------------"
+echo " Plugin uv is installed."
+if command -v uv >/dev/null 2>&1; then
+  echo " $(uv --version 2>/dev/null || echo 'uv present')"
+fi
+echo " See Settings -> uv in the webGUI for status."
+echo "-----------------------------------------------------------"
+echo ""
+]]>
+</INLINE>
+</FILE>
+
+<!-- ==========================================================
+     Remove: runs when the user uninstalls the plugin.
+     ========================================================== -->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+<![CDATA[
+if [[ -x /usr/local/emhttp/plugins/uv/scripts/remove_uv.sh ]]; then
+  /usr/local/emhttp/plugins/uv/scripts/remove_uv.sh
+else
+  rm -f /usr/local/bin/uv /usr/local/bin/uvx
+  rm -rf /boot/config/plugins/uv
+  rm -rf /usr/local/emhttp/plugins/uv
+fi
+echo ""
+echo "-----------------------------------------------------------"
+echo " Plugin uv has been removed."
+echo "-----------------------------------------------------------"
+echo ""
+]]>
+</INLINE>
+</FILE>
+
+</PLUGIN>

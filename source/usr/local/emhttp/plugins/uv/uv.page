@@ -1,0 +1,91 @@
+Menu="OtherSettings"
+Type="xmenu"
+Title="uv"
+Icon="icon-uv.png"
+Tag="bolt"
+---
+<?PHP
+/*
+ * Copyright 2026, uv-unraid contributors
+ *
+ * Settings page for the uv Unraid plugin. Displays the installed uv version
+ * and exposes an "Update now" button that re-runs install_uv.sh --update.
+ */
+
+require_once '/usr/local/emhttp/plugins/uv/include/helpers.php';
+
+$installed = uv_installed_version();
+$cached    = uv_cached_version();
+$bin       = uv_binary_path();
+$cacheDir  = uv_cache_dir();
+$installedDisplay = $installed ?? _('Not installed');
+$cachedDisplay    = $cached    ?? _('none');
+?>
+
+<style>
+.uv-status td:first-child { white-space: nowrap; padding-right: 1em; }
+.uv-status code            { font-size: 0.95em; }
+#uv-log {
+    display: none;
+    white-space: pre-wrap;
+    background: #111;
+    color: #eee;
+    padding: 10px;
+    margin-top: 10px;
+    max-height: 400px;
+    overflow: auto;
+    font-family: monospace;
+    font-size: 12px;
+}
+</style>
+
+<table class="uv-status">
+  <tr>
+    <td>_(Installed version)_:</td>
+    <td><strong><?= htmlspecialchars($installedDisplay) ?></strong></td>
+  </tr>
+  <tr>
+    <td>_(Cached on USB)_:</td>
+    <td><?= htmlspecialchars($cachedDisplay) ?></td>
+  </tr>
+  <tr>
+    <td>_(Binary path)_:</td>
+    <td><code><?= htmlspecialchars($bin) ?></code></td>
+  </tr>
+  <tr>
+    <td>_(Cache directory)_:</td>
+    <td><code><?= htmlspecialchars($cacheDir) ?></code></td>
+  </tr>
+  <tr>
+    <td>_(Upstream project)_:</td>
+    <td><a href="https://github.com/astral-sh/uv" target="_blank">astral-sh/uv</a></td>
+  </tr>
+</table>
+
+&nbsp;
+
+<form markdown="1" name="uv_update" onsubmit="uv_update(); return false;">
+_(Update uv to the latest release)_:
+: <input type="submit" value="_(Update now)_">
+</form>
+
+<pre id="uv-log"></pre>
+
+<script>
+function uv_update() {
+    var log = document.getElementById('uv-log');
+    log.style.display = 'block';
+    log.textContent = '> running /usr/local/emhttp/plugins/uv/scripts/install_uv.sh --update\n';
+    $.ajax({
+        url: '/plugins/uv/include/update.php',
+        method: 'POST',
+        dataType: 'text'
+    }).done(function (data) {
+        log.textContent += data;
+        log.scrollTop = log.scrollHeight;
+        setTimeout(function () { location.reload(); }, 1500);
+    }).fail(function (xhr) {
+        log.textContent += '\nrequest failed: ' + xhr.status + ' ' + xhr.statusText;
+    });
+}
+</script>
