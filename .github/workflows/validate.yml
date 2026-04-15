@@ -1,0 +1,76 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: lint & validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck libxml2-utils php-cli python3
+
+      - name: Validate plugins/uv.plg is well-formed XML
+        run: xmllint --noout plugins/uv.plg
+
+      - name: Assert DOCTYPE entities expand (no CDATA regression)
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          tree = ET.parse('plugins/uv.plg')
+          root = tree.getroot()
+          problems = []
+          # Any literal "&name;" / "&emhttpLOC;" / ... that survives parsing is a
+          # CDATA regression. ET expands internal subset entities, so the parsed
+          # text of INLINE blocks must not contain them.
+          needles = ['&name;', '&emhttpLOC;', '&pluginLOC;', '&version;']
+          for file_el in root.findall('FILE'):
+              inline = file_el.find('INLINE')
+              if inline is None:
+                  continue
+              text = inline.text or ''
+              for n in needles:
+                  if n in text:
+                      problems.append(f"{file_el.get('Name','(no Name)')}: contains unexpanded entity '{n}'")
+          if problems:
+              print('\n'.join(problems), file=sys.stderr)
+              sys.exit(1)
+          print('entities ok')
+          PY
+
+      - name: Bash syntax + shellcheck
+        run: |
+          set -e
+          for f in \
+            source/usr/local/emhttp/plugins/uv/scripts/install_uv.sh \
+            source/usr/local/emhttp/plugins/uv/scripts/remove_uv.sh \
+            scripts/build-plg.sh; do
+            bash -n "$f"
+            shellcheck "$f"
+          done
+
+      - name: PHP lint
+        run: |
+          set -e
+          for f in source/usr/local/emhttp/plugins/uv/include/*.php; do
+            php -l "$f"
+          done
+
+      - name: Rebuild plugins/uv.plg and verify no drift from source/
+        run: |
+          # scripts/build-plg.sh already runs its own roundtrip self-test
+          # (parses the generated .plg and byte-compares each inlined FILE
+          # against its source/ counterpart). We additionally re-run the
+          # build using the version currently committed in the .plg, and
+          # fail CI on any git diff — that catches committed .plg files
+          # whose embedded content no longer matches source/.
+          version=$(grep -Po '<!ENTITY version\s+"\K[^"]+' plugins/uv.plg)
+          scripts/build-plg.sh "$version"
+          git diff --exit-code plugins/uv.plg
