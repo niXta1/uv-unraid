@@ -1,7 +1,6 @@
 Menu="OtherSettings"
-Type="xmenu"
+Type="php"
 Title="uv"
-Icon="icon-uv.png"
 Tag="bolt"
 ---
 <?PHP
@@ -10,6 +9,12 @@ Tag="bolt"
  *
  * Settings page for the uv Unraid plugin. Displays the installed uv version
  * and exposes an "Update now" button that re-runs install_uv.sh --update.
+ *
+ * The page lives under Settings -> Other Settings -> uv. "OtherSettings"
+ * is the same Menu value used by stock Unraid plugins (e.g. apcupsd) to
+ * drop into the "Other Settings" group on the Settings tab. The value is
+ * not listed in plugin-docs.mstrhakr.com but is verified against the
+ * official unraid/webgui source tree.
  */
 
 require_once '/usr/local/emhttp/plugins/uv/include/helpers.php';
@@ -20,6 +25,12 @@ $bin       = uv_binary_path();
 $cacheDir  = uv_cache_dir();
 $installedDisplay = $installed ?? _('Not installed');
 $cachedDisplay    = $cached    ?? _('none');
+
+// Unraid exposes its CSRF token in var.ini. The Update endpoint
+// (include/update.php) requires it on every POST to prevent a malicious
+// page on another origin from triggering the installer.
+$var        = @parse_ini_file('/var/local/emhttp/var.ini');
+$csrf_token = is_array($var) ? ($var['csrf_token'] ?? '') : '';
 ?>
 
 <style>
@@ -72,6 +83,8 @@ _(Update uv to the latest release)_:
 <pre id="uv-log"></pre>
 
 <script>
+var UV_CSRF = <?= json_encode($csrf_token) ?>;
+
 function uv_update() {
     var log = document.getElementById('uv-log');
     log.style.display = 'block';
@@ -79,6 +92,7 @@ function uv_update() {
     $.ajax({
         url: '/plugins/uv/include/update.php',
         method: 'POST',
+        data: { csrf_token: UV_CSRF },
         dataType: 'text'
     }).done(function (data) {
         log.textContent += data;

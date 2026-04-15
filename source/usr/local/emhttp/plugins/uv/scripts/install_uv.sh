@@ -39,12 +39,36 @@ err()  { printf '[uv] error: %s\n' "$*" >&2; }
 FORCE_UPDATE=0
 WANTED_VERSION=""
 
+usage() {
+  cat <<'USAGE'
+install_uv.sh — download and install Astral's uv binary on Unraid.
+
+This script is idempotent. It is invoked:
+  1. From the .plg file during plugin installation.
+  2. On every Unraid boot, because Unraid re-runs installed .plg files from
+     /boot/config/plugins/ as part of its init sequence.
+  3. Manually from the Settings page "Update now" button.
+
+Layout on disk:
+  /boot/config/plugins/uv/            persistent state on the USB flash
+  /boot/config/plugins/uv/bin/uv      cached binary (survives reboots)
+  /boot/config/plugins/uv/bin/uvx     cached companion binary
+  /boot/config/plugins/uv/version     cached version string (e.g. 0.5.11)
+  /usr/local/bin/uv                   live copy (lost on reboot)
+
+Usage:
+  install_uv.sh                   install cached, or fetch latest if no cache
+  install_uv.sh --update          always fetch the latest release
+  install_uv.sh --version X.Y.Z   install a specific version
+  install_uv.sh --help            show this message
+USAGE
+}
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --update)  FORCE_UPDATE=1; shift ;;
     --version) WANTED_VERSION=${2:?missing version}; shift 2 ;;
-    --help|-h)
-      sed -n '2,30p' "$0"; exit 0 ;;
+    --help|-h) usage; exit 0 ;;
     *)
       err "unknown argument: $1"; exit 2 ;;
   esac

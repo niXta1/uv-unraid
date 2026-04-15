@@ -14,7 +14,7 @@ webGUI shows the currently installed version and lets you trigger an update.
 - Caches the binary on the USB flash drive at `/boot/config/plugins/uv/bin/` so Unraid's
   tmpfs root doesn't need to re-download it on every reboot.
 - Idempotent install script — re-runs safely, supports upgrading by deleting the cache.
-- Settings page under **Settings → User Utilities → uv** showing the installed version,
+- Settings page under **Settings → Other Settings → uv** showing the installed version,
   cache location and an "Update now" button.
 - Clean uninstall that removes the binary, cache and webGUI files.
 
@@ -30,36 +30,55 @@ In the Unraid webGUI:
    ```
 
 3. Click **Install**. After the install script finishes, open a terminal and run
-   `uv --version` to verify, or navigate to **Settings → uv**.
+   `uv --version` to verify, or navigate to **Settings → Other Settings → uv**.
 
 ## Repository layout
 
 ```
 uv-unraid/
 ├── plugins/
-│   └── uv.plg                     # The plugin manifest (single source of truth)
-├── source/                        # Canonical, human-editable copies of files that
-│   └── usr/local/emhttp/          # the .plg inlines into /usr/local/emhttp/plugins/uv/
-│       └── plugins/uv/
-│           ├── uv.page            # Settings page (Unraid webGUI)
-│           ├── README.md          # Description shown in the Plugin Manager
-│           ├── include/
-│           │   └── helpers.php    # PHP helpers used by uv.page
-│           └── scripts/
-│               ├── install_uv.sh  # Downloads/updates the uv binary
-│               └── remove_uv.sh   # Removes uv on plugin uninstall
+│   └── uv.plg                     # Generated plugin manifest (build output)
+├── source/                        # Canonical, human-editable source tree
+│   └── usr/local/emhttp/plugins/uv/
+│       ├── uv.page                # Settings page (Menu="OtherSettings", Type=php)
+│       ├── README.md              # Description shown in the Plugin Manager
+│       ├── include/
+│       │   ├── helpers.php        # PHP helpers used by uv.page
+│       │   └── update.php         # CSRF-protected AJAX endpoint for "Update now"
+│       └── scripts/
+│           ├── install_uv.sh      # Downloads/updates the uv binary (idempotent)
+│           └── remove_uv.sh       # Tolerant cleanup on plugin uninstall
+├── scripts/
+│   └── build-plg.sh               # Regenerates plugins/uv.plg from source/
 ├── .github/workflows/
-│   └── validate.yml               # CI: XML lint + shellcheck
+│   └── validate.yml               # CI: xmllint + shellcheck + php -l + drift check
 ├── CHANGELOG.md
 ├── LICENSE
 └── README.md
 ```
 
 The files under `source/` are the canonical, editable copies of everything that ships
-inside the plugin. The same content is embedded as `<FILE Name="...">…<INLINE>…</INLINE>`
-blocks in `plugins/uv.plg`, which is what Unraid actually downloads and executes. If you
-edit something under `source/`, remember to sync the corresponding block in `uv.plg`.
-Both copies are checked by CI to catch drift.
+inside the plugin. `scripts/build-plg.sh` regenerates `plugins/uv.plg` by embedding each
+file under `source/usr/local/emhttp/plugins/uv/` as a
+`<FILE Name="…" Run="/bin/true"><INLINE>…</INLINE></FILE>` block, XML-escaping the
+source bytes so they roundtrip cleanly through the plugin manager's XML parser. A
+roundtrip verification step inside `build-plg.sh` parses the generated `.plg`, extracts
+each inlined block and byte-compares it against its corresponding source file — any
+drift aborts the build, and CI additionally re-runs the build to catch uncommitted
+edits to either side.
+
+Key format decisions (see comments in `scripts/build-plg.sh` for rationale):
+
+- **No `<![CDATA[…]]>` wrappers.** DOCTYPE entity references (`&name;`, `&emhttpLOC;`,
+  …) are not expanded inside CDATA, which would be a silent trap for future edits that
+  try to use them. The build XML-escapes `&`, `<`, `>` instead; the plugin manager
+  decodes them back to the original bytes before writing each file to disk.
+- **Every `<FILE Name="…">` block carries `Run="/bin/true"`** as a defensive no-op.
+  The format docs at plugin-docs.mstrhakr.com only show `Name=` paired with a `Run=`
+  command; `/bin/true` guarantees both the "write file" and the "execute" code paths
+  fire, regardless of whether `Name` alone would have been enough.
+- **The `<CHANGES>` block is generated from `CHANGELOG.md`** so there is exactly one
+  source of truth for the version history.
 
 ## How it interacts with Unraid's USB boot flash
 
