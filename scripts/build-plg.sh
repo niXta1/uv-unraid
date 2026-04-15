@@ -4,31 +4,35 @@
 #
 # Every file under source/usr/local/emhttp/plugins/uv/ is embedded as a
 #
-#   <FILE Name="…" Run="/bin/true">
+#   <FILE Name="…" Mode="0644|0755">
 #     <INLINE>…xml-escaped source bytes…</INLINE>
 #   </FILE>
 #
 # block. The key design decisions here are driven by the Unraid plugin
-# format docs at plugin-docs.mstrhakr.com and by empirical testing:
+# format docs at plugin-docs.mstrhakr.com and — more importantly — by
+# surveying the .plg files of real Unraid 7.x plugins on GitHub
+# (bergware/dynamix, Joly0/par2protect, Ac3sRwild/unraid-lsi-mon,
+# dkaser/unraid-*, SimonFair/*, …):
 #
 #   * No CDATA. XML entity references (&name;, &emhttpLOC;, …) declared
 #     in the DOCTYPE header are NOT expanded inside <![CDATA[…]]>, which
 #     makes CDATA a trap for future edits even if the *current* sources
 #     happen not to use any entities. We XML-escape &, <, > instead; the
 #     plugin manager's parser will decode them back to the original bytes
-#     before writing each file to disk.
+#     before writing each file to disk. Joly0/par2protect's v7 plugin
+#     confirms bare <INLINE> content with &emhttp; entity refs works.
 #
-#   * Run="/bin/true" on every <FILE Name="…"> block. The docs' examples
-#     of <FILE Name="…"> always pair it with a Run command, and it is not
-#     explicitly documented that Name alone will cause the file to be
-#     written. /bin/true is a guaranteed-present no-op that ignores its
-#     arguments, so it's the cheapest defensive wrapper that guarantees
-#     both "write Name" and "run something successful" semantics.
+#   * No Run= on <FILE Name> blocks. 650+ real-world .plg files use
+#     <FILE Name="…"><INLINE>…</INLINE></FILE> without any Run attribute
+#     to materialize a file on disk. Examples in the v7 cohort:
+#       - Joly0/par2protect par2protect.plg:80 (min="7.0.0")
+#       - Ac3sRwild/unraid-lsi-mon plugin/lsi-mon.plg:56 (min="7.0.0")
+#       - bergware/dynamix dynamix.s3.sleep.plg:216 (still current).
 #
-#   * No Mode= attribute. The docs list Mode once inside a generic
-#     case-sensitivity warning but never define it as a supported
-#     attribute. Script file permissions are instead set by an explicit
-#     chmod in the post-install INLINE block.
+#   * Mode= is a real attribute. Undocumented in mstrhakr's plugin-docs,
+#     but actively used by bergware/dynamix on a Name+INLINE block
+#     (Mode="0770" in dynamix.s3.sleep.plg). Using it here lets us skip
+#     the post-install chmod dance entirely.
 #
 #   * The <CHANGES> block is extracted from CHANGELOG.md so there is a
 #     single source of truth for the version history.
@@ -141,7 +145,12 @@ PY
 emit_file_block() {
   local src=$1
   local dest=/${src#"${SRC_ROOT}/"}
-  printf '\n<FILE Name="%s" Run="/bin/true">\n<INLINE>\n' "${dest}"
+  local mode
+  case $src in
+    *.sh)  mode=0755 ;;
+    *)     mode=0644 ;;
+  esac
+  printf '\n<FILE Name="%s" Mode="%s">\n<INLINE>\n' "${dest}" "${mode}"
   xml_escape < "${src}"
   printf '</INLINE>\n</FILE>\n'
 }
@@ -270,12 +279,13 @@ EOF_TEMPLATE_HEAD
      the plugin install, so install_uv.sh failures are caught
      explicitly and logged rather than propagated — the cached
      binary (if any) will still be restored on the next boot.
+
+     Script file modes come from the Mode="0755" attribute on the
+     individual <FILE> blocks above; no explicit chmod is needed.
      ========================================================== -->
 <FILE Run="/bin/bash">
 <INLINE>
 set -e
-
-chmod 0755 &emhttpLOC;/scripts/install_uv.sh &emhttpLOC;/scripts/remove_uv.sh
 
 if ! &emhttpLOC;/scripts/install_uv.sh; then
   echo "[uv] install_uv.sh failed during plugin install" &gt;&amp;2

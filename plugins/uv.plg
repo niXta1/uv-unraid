@@ -46,10 +46,17 @@
   canonical `source/` tree, with XML-escaped content instead of
   `&lt;![CDATA[…]]&gt;` wrappers so DOCTYPE entity references (`&amp;name;`,
   `&amp;emhttpLOC;`, `&amp;pluginLOC;`, …) expand correctly at parse time.
-- Every `&lt;FILE Name="…"&gt;` block now carries `Run="/bin/true"` as a
-  defensive no-op to match the documented `Name=`+`Run=` pattern.
-- Undocumented `Mode="…"` attribute dropped; script file permissions are
-  set explicitly via `chmod` in the post-install `&lt;INLINE&gt;` block.
+- Every webGUI file is emitted as `&lt;FILE Name="…" Mode="0644|0755"&gt;`
+  with `&lt;INLINE&gt;` content and **no** `Run=` attribute, matching the
+  idiomatic pattern used by every recent Unraid 7.x plugin surveyed
+  (Joly0/par2protect `min="7.0.0"`, Ac3sRwild/unraid-lsi-mon
+  `min="7.0.0"`, bergware/dynamix, dkaser/unraid-*, …).
+- `Mode="0644"`/`Mode="0755"` re-introduced after confirming it is a
+  real supported attribute (documented only incidentally at
+  plugin-docs.mstrhakr.com, but actively used by bergware/dynamix
+  `dynamix.s3.sleep.plg:216` with `Mode="0770"`). The redundant
+  `chmod 0755 …` line from the post-install `&lt;INLINE&gt;` block is gone;
+  script permissions now come directly from the `Mode=` attribute.
 - `&lt;PLUGIN&gt;` element gains `project`, `support`, `readme` and `icon="bolt"`
   attributes.
 - `&lt;CHANGES&gt;` is generated from this `CHANGELOG.md` so there is exactly one
@@ -74,7 +81,7 @@
      webGUI files (inlined verbatim from source/)
      ========================================================== -->
 
-<FILE Name="/usr/local/emhttp/plugins/uv/README.md" Run="/bin/true">
+<FILE Name="/usr/local/emhttp/plugins/uv/README.md" Mode="0644">
 <INLINE>
 # uv
 
@@ -107,7 +114,7 @@ see the installed version and trigger an update.
 </INLINE>
 </FILE>
 
-<FILE Name="/usr/local/emhttp/plugins/uv/include/helpers.php" Run="/bin/true">
+<FILE Name="/usr/local/emhttp/plugins/uv/include/helpers.php" Mode="0644">
 <INLINE>
 &lt;?PHP
 /*
@@ -158,7 +165,7 @@ function uv_cached_binary_exists(): bool {
 </INLINE>
 </FILE>
 
-<FILE Name="/usr/local/emhttp/plugins/uv/include/update.php" Run="/bin/true">
+<FILE Name="/usr/local/emhttp/plugins/uv/include/update.php" Mode="0644">
 <INLINE>
 &lt;?PHP
 /*
@@ -224,7 +231,7 @@ echo "\n[exit $status]\n";
 </INLINE>
 </FILE>
 
-<FILE Name="/usr/local/emhttp/plugins/uv/scripts/install_uv.sh" Run="/bin/true">
+<FILE Name="/usr/local/emhttp/plugins/uv/scripts/install_uv.sh" Mode="0755">
 <INLINE>
 #!/bin/bash
 #
@@ -392,7 +399,7 @@ install_from_cache || exit 1
 </INLINE>
 </FILE>
 
-<FILE Name="/usr/local/emhttp/plugins/uv/scripts/remove_uv.sh" Run="/bin/true">
+<FILE Name="/usr/local/emhttp/plugins/uv/scripts/remove_uv.sh" Mode="0755">
 <INLINE>
 #!/bin/bash
 #
@@ -426,7 +433,7 @@ exit 0
 </INLINE>
 </FILE>
 
-<FILE Name="/usr/local/emhttp/plugins/uv/uv.page" Run="/bin/true">
+<FILE Name="/usr/local/emhttp/plugins/uv/uv.page" Mode="0644">
 <INLINE>
 Menu="OtherSettings"
 Type="php"
@@ -543,12 +550,13 @@ function uv_update() {
      the plugin install, so install_uv.sh failures are caught
      explicitly and logged rather than propagated — the cached
      binary (if any) will still be restored on the next boot.
+
+     Script file modes come from the Mode="0755" attribute on the
+     individual <FILE> blocks above; no explicit chmod is needed.
      ========================================================== -->
 <FILE Run="/bin/bash">
 <INLINE>
 set -e
-
-chmod 0755 &emhttpLOC;/scripts/install_uv.sh &emhttpLOC;/scripts/remove_uv.sh
 
 if ! &emhttpLOC;/scripts/install_uv.sh; then
   echo "[uv] install_uv.sh failed during plugin install" &gt;&amp;2

@@ -24,10 +24,17 @@ project adopts Unraid's conventional `YYYY.MM.DD` version scheme.
   canonical `source/` tree, with XML-escaped content instead of
   `<![CDATA[…]]>` wrappers so DOCTYPE entity references (`&name;`,
   `&emhttpLOC;`, `&pluginLOC;`, …) expand correctly at parse time.
-- Every `<FILE Name="…">` block now carries `Run="/bin/true"` as a
-  defensive no-op to match the documented `Name=`+`Run=` pattern.
-- Undocumented `Mode="…"` attribute dropped; script file permissions are
-  set explicitly via `chmod` in the post-install `<INLINE>` block.
+- Every webGUI file is emitted as `<FILE Name="…" Mode="0644|0755">`
+  with `<INLINE>` content and **no** `Run=` attribute, matching the
+  idiomatic pattern used by every recent Unraid 7.x plugin surveyed
+  (Joly0/par2protect `min="7.0.0"`, Ac3sRwild/unraid-lsi-mon
+  `min="7.0.0"`, bergware/dynamix, dkaser/unraid-*, …).
+- `Mode="0644"`/`Mode="0755"` re-introduced after confirming it is a
+  real supported attribute (documented only incidentally at
+  plugin-docs.mstrhakr.com, but actively used by bergware/dynamix
+  `dynamix.s3.sleep.plg:216` with `Mode="0770"`). The redundant
+  `chmod 0755 …` line from the post-install `<INLINE>` block is gone;
+  script permissions now come directly from the `Mode=` attribute.
 - `<PLUGIN>` element gains `project`, `support`, `readme` and `icon="bolt"`
   attributes.
 - `<CHANGES>` is generated from this `CHANGELOG.md` so there is exactly one
