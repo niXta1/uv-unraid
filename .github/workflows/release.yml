@@ -1,0 +1,53 @@
+name: release
+
+on:
+  push:
+    tags:
+      # Matches Unraid's YYYY.MM.DD convention, with optional letter suffix.
+      - "[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]"
+      - "[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9][a-z]"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Extract the section for this version from CHANGELOG.md.
+          # Matches from "## [TAG]" to the next "## [" or EOF.
+          body=$(python3 - "$TAG" <<'PY'
+          import re, sys, pathlib
+          tag = sys.argv[1]
+          text = pathlib.Path("CHANGELOG.md").read_text()
+          # Escape the tag for regex (dots are literal in version strings)
+          escaped = re.escape(tag)
+          pattern = rf"^## \[{escaped}\].*?\n(.*?)(?=^## \[|\Z)"
+          m = re.search(pattern, text, re.MULTILINE | re.DOTALL)
+          if m:
+              print(m.group(1).strip())
+          else:
+              print(f"Release {tag}")
+          PY
+          )
+          # Write to GITHUB_OUTPUT using a heredoc delimiter
+          {
+            echo "body<<CHANGELOG_EOF"
+            echo "$body"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ github.ref_name }}"
+          body: "${{ steps.changelog.outputs.body }}"
+          draft: false
+          prerelease: false
