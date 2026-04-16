@@ -3,7 +3,25 @@
 All notable changes to the `uv-unraid` plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this
-project adopts Unraid's conventional `YYYY.MM.DD` version scheme.
+project adopts Unraid's conventional `YYYY.MM.DD` version scheme, with lowercase
+letter suffixes for same-day releases (`YYYY.MM.DDa`, `YYYY.MM.DDb`, …). The plugin
+manager compares versions lexicographically (`strcmp`), so the suffix sorts correctly.
+
+The upstream `uv` version is tracked separately (on the Settings page and in
+`/boot/config/plugins/uv/version`), not embedded in the plugin version string.
+
+## [2026.04.16] - 2026-04-16
+
+### Changed
+- Compact plugin README to a single line so the Plugin Manager listing matches
+  the height of other plugins.
+- Fix menu path label: `Menu="OtherSettings"` renders as "User Utilities" in
+  the Unraid webGUI, not "Other Settings".
+- Drop `Run="/bin/true"` from `<FILE Name>` blocks and re-introduce `Mode=`
+  attribute, matching the idiomatic pattern used by v7 plugins (Joly0/par2protect,
+  Ac3sRwild/unraid-lsi-mon, bergware/dynamix).
+- Document versioning convention (`YYYY.MM.DD[a-z]`) based on survey of
+  community.applications, nvidia-driver, par2protect and tailscale plugins.
 
 ## [2026.04.15] - 2026-04-15
 

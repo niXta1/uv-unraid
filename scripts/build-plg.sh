@@ -59,10 +59,21 @@ if [[ ! -d ${PLUGIN_SRC} ]]; then
 fi
 
 # Resolve version: argv[1] > latest CHANGELOG entry > today's date.
+#
+# Unraid plugins universally use the YYYY.MM.DD convention. When more
+# than one release happens on the same day, a lowercase letter suffix is
+# appended: 2026.04.16a, 2026.04.16b, … — verified in par2protect
+# (Joly0), nvidia-driver (ich777) and others. The plugin manager
+# compares versions with PHP's strcmp (lexicographic), so the suffix
+# sorts correctly ("2026.04.16a" > "2026.04.16").
+#
+# The upstream uv version is NOT embedded in the plugin version; it is
+# tracked separately in /boot/config/plugins/uv/version and displayed
+# on the Settings page. This mirrors how dkaser/tailscale handles it.
 if [[ $# -gt 0 ]]; then
   VERSION=$1
 elif [[ -f ${CHANGELOG} ]]; then
-  VERSION=$(grep -Po '^## \[\K[0-9]{4}\.[0-9]{2}\.[0-9]{2}' "${CHANGELOG}" \
+  VERSION=$(grep -Po '^## \[\K[0-9]{4}\.[0-9]{2}\.[0-9]{2}[a-z]?' "${CHANGELOG}" \
               | head -n1 || true)
   VERSION=${VERSION:-$(date +%Y.%m.%d)}
 else
