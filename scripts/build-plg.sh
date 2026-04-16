@@ -249,7 +249,7 @@ PY
 <!ENTITY launch     "Settings/uv">
 <!ENTITY gh         "https://github.com/nixta1/uv-unraid">
 <!ENTITY pluginURL  "https://raw.githubusercontent.com/nixta1/uv-unraid/claude/unraid-uv-plugin-NBB16/plugins/&name;.plg">
-<!ENTITY readmeURL  "https://raw.githubusercontent.com/nixta1/uv-unraid/main/source/usr/local/emhttp/plugins/&name;/README.md">
+<!ENTITY readmeURL  "https://raw.githubusercontent.com/nixta1/uv-unraid/claude/unraid-uv-plugin-NBB16/source/usr/local/emhttp/plugins/&name;/README.md">
 <!ENTITY emhttpLOC  "/usr/local/emhttp/plugins/&name;">
 <!ENTITY pluginLOC  "/boot/config/plugins/&name;">
 ]>
