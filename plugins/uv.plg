@@ -3,11 +3,11 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name       "uv">
 <!ENTITY author     "nixta1">
-<!ENTITY version    "2026.04.16a">
+<!ENTITY version    "2026.04.16b">
 <!ENTITY launch     "Settings/uv">
 <!ENTITY gh         "https://github.com/nixta1/uv-unraid">
-<!ENTITY pluginURL  "https://raw.githubusercontent.com/nixta1/uv-unraid/claude/unraid-uv-plugin-NBB16/plugins/&name;.plg">
-<!ENTITY readmeURL  "https://raw.githubusercontent.com/nixta1/uv-unraid/claude/unraid-uv-plugin-NBB16/source/usr/local/emhttp/plugins/&name;/README.md">
+<!ENTITY pluginURL  "https://raw.githubusercontent.com/nixta1/uv-unraid/main/plugins/&name;.plg">
+<!ENTITY readmeURL  "https://raw.githubusercontent.com/nixta1/uv-unraid/main/source/usr/local/emhttp/plugins/&name;/README.md">
 <!ENTITY emhttpLOC  "/usr/local/emhttp/plugins/&name;">
 <!ENTITY pluginLOC  "/boot/config/plugins/&name;">
 ]>
