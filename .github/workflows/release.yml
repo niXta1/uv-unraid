@@ -7,6 +7,16 @@ on:
       - "[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]"
       - "[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9][a-z]"
 
+  # Allow manual trigger from the Actions tab. Enter the version string
+  # (e.g. "2026.04.16b") and the workflow will create the tag + release
+  # from the latest commit on main.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to create (e.g. 2026.04.16b)"
+        required: true
+        type: string
+
 permissions:
   contents: write
 
@@ -16,18 +26,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate version matches plugins/uv.plg
+        run: |
+          plg_version=$(grep -Po '<!ENTITY version\s+"\K[^"]+' plugins/uv.plg)
+          if [[ "$plg_version" != "${{ steps.version.outputs.tag }}" ]]; then
+            echo "::error::Tag ${{ steps.version.outputs.tag }} does not match plg version ${plg_version}"
+            exit 1
+          fi
+
+      - name: Create tag (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Extract changelog for this version
         id: changelog
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          # Extract the section for this version from CHANGELOG.md.
-          # Matches from "## [TAG]" to the next "## [" or EOF.
+          TAG="${{ steps.version.outputs.tag }}"
           body=$(python3 - "$TAG" <<'PY'
           import re, sys, pathlib
           tag = sys.argv[1]
           text = pathlib.Path("CHANGELOG.md").read_text()
-          # Escape the tag for regex (dots are literal in version strings)
           escaped = re.escape(tag)
           pattern = rf"^## \[{escaped}\].*?\n(.*?)(?=^## \[|\Z)"
           m = re.search(pattern, text, re.MULTILINE | re.DOTALL)
@@ -37,7 +71,6 @@ jobs:
               print(f"Release {tag}")
           PY
           )
-          # Write to GITHUB_OUTPUT using a heredoc delimiter
           {
             echo "body<<CHANGELOG_EOF"
             echo "$body"
@@ -47,7 +80,8 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          name: "${{ github.ref_name }}"
+          tag_name: "${{ steps.version.outputs.tag }}"
+          name: "${{ steps.version.outputs.tag }}"
           body: "${{ steps.changelog.outputs.body }}"
           draft: false
           prerelease: false
