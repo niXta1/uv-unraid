@@ -97,6 +97,7 @@ install_from_cache() {
 download_and_cache() {
   local version=$1
   local url="${RELEASES_DL}/${version}/${ARCH_TARBALL}"
+  local sha_url="${url}.sha256"
   local tmp
   tmp=$(mktemp -d) || { err "mktemp failed"; return 1; }
   # shellcheck disable=SC2064
@@ -106,6 +107,22 @@ download_and_cache() {
   if ! curl -fsSL --max-time 120 -o "${tmp}/${ARCH_TARBALL}" "${url}"; then
     err "download failed"
     return 1
+  fi
+
+  log "verifying SHA-256 checksum"
+  if curl -fsSL --max-time 15 -o "${tmp}/${ARCH_TARBALL}.sha256" "${sha_url}"; then
+    # The .sha256 file contains: <hash>  <filename>
+    local expected
+    expected=$(awk '{print $1}' "${tmp}/${ARCH_TARBALL}.sha256")
+    local actual
+    actual=$(sha256sum "${tmp}/${ARCH_TARBALL}" | awk '{print $1}')
+    if [[ "${expected}" != "${actual}" ]]; then
+      err "checksum mismatch: expected ${expected}, got ${actual}"
+      return 1
+    fi
+    log "checksum ok"
+  else
+    log "warning: could not download checksum file, skipping verification"
   fi
 
   if ! tar -xzf "${tmp}/${ARCH_TARBALL}" -C "${tmp}"; then
