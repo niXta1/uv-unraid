@@ -47,6 +47,7 @@
 
 <FILE Name="/usr/local/emhttp/plugins/uv/README.md" Mode="0644">
 <INLINE>
+uv
 Installs uv, Astral's extremely fast Python package and project manager, into /usr/local/bin on Unraid.
 </INLINE>
 </FILE>
