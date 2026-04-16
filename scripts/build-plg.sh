@@ -300,7 +300,7 @@ if command -v uv &gt;/dev/null 2&gt;&amp;1; then
 else
   echo " uv is not on PATH yet — check logs above."
 fi
-echo " See Settings -&gt; Other Settings -&gt; uv for status."
+echo " See Settings -&gt; User Utilities -&gt; uv for status."
 echo "-----------------------------------------------------------"
 echo ""
 </INLINE>

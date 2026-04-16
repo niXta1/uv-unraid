@@ -12,7 +12,7 @@ project adopts Unraid's conventional `YYYY.MM.DD` version scheme.
 - Downloads and installs `uv` + `uvx` from the Astral GitHub releases.
 - Caches the binary on `/boot/config/plugins/uv/bin/` so the plugin survives
   reboots without needing network access.
-- Settings page under **Settings → Other Settings → uv** showing the installed
+- Settings page under **Settings → User Utilities → uv** showing the installed
   version, cached version, binary path, and an "Update now" action.
 - CSRF-protected AJAX endpoint backing the "Update now" button; the token is
   pulled from `/var/local/emhttp/var.ini` and verified with `hash_equals`.

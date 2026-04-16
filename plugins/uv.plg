@@ -34,7 +34,7 @@
 - Downloads and installs `uv` + `uvx` from the Astral GitHub releases.
 - Caches the binary on `/boot/config/plugins/uv/bin/` so the plugin survives
   reboots without needing network access.
-- Settings page under **Settings → Other Settings → uv** showing the installed
+- Settings page under **Settings → User Utilities → uv** showing the installed
   version, cached version, binary path, and an "Update now" action.
 - CSRF-protected AJAX endpoint backing the "Update now" button; the token is
   pulled from `/var/local/emhttp/var.ini` and verified with `hash_equals`.
@@ -83,34 +83,7 @@
 
 <FILE Name="/usr/local/emhttp/plugins/uv/README.md" Mode="0644">
 <INLINE>
-# uv
-
-Installs [uv](https://github.com/astral-sh/uv), Astral's extremely fast Python package
-and project manager, into `/usr/local/bin` on Unraid.
-
-The plugin downloads the official upstream binary from Astral's GitHub releases
-(`uv-x86_64-unknown-linux-gnu.tar.gz`) on first install, caches it on the USB flash
-drive at `/boot/config/plugins/uv/bin/`, and restores it to `/usr/local/bin/uv` and
-`/usr/local/bin/uvx` on every boot — so no network access is required after the first
-install.
-
-## Usage
-
-Open a terminal and run:
-
-```
-uv --version
-uv python install 3.12
-uv venv
-```
-
-A Settings page is available under **Settings → User Utilities → uv** where you can
-see the installed version and trigger an update.
-
-## Links
-
-- Upstream project: &lt;https://github.com/astral-sh/uv&gt;
-- Plugin source: &lt;https://github.com/nixta1/uv-unraid&gt;
+Installs **uv**, Astral's extremely fast Python package and project manager, into /usr/local/bin on Unraid.
 </INLINE>
 </FILE>
 
@@ -571,7 +544,7 @@ if command -v uv &gt;/dev/null 2&gt;&amp;1; then
 else
   echo " uv is not on PATH yet — check logs above."
 fi
-echo " See Settings -&gt; Other Settings -&gt; uv for status."
+echo " See Settings -&gt; User Utilities -&gt; uv for status."
 echo "-----------------------------------------------------------"
 echo ""
 </INLINE>

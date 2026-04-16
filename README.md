@@ -14,7 +14,7 @@ webGUI shows the currently installed version and lets you trigger an update.
 - Caches the binary on the USB flash drive at `/boot/config/plugins/uv/bin/` so Unraid's
   tmpfs root doesn't need to re-download it on every reboot.
 - Idempotent install script — re-runs safely, supports upgrading by deleting the cache.
-- Settings page under **Settings → Other Settings → uv** showing the installed version,
+- Settings page under **Settings → User Utilities → uv** showing the installed version,
   cache location and an "Update now" button.
 - Clean uninstall that removes the binary, cache and webGUI files.
 
@@ -30,7 +30,7 @@ In the Unraid webGUI:
    ```
 
 3. Click **Install**. After the install script finishes, open a terminal and run
-   `uv --version` to verify, or navigate to **Settings → Other Settings → uv**.
+   `uv --version` to verify, or navigate to **Settings → User Utilities → uv**.
 
 ## Repository layout
 
