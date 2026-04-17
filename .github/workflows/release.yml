@@ -68,10 +68,14 @@ jobs:
           escaped = re.escape(tag)
           pattern = rf"^## \[{escaped}\].*?\n(.*?)(?=^## \[|\Z)"
           m = re.search(pattern, text, re.MULTILINE | re.DOTALL)
-          if m:
-              print(m.group(1).strip())
-          else:
-              print(f"Release {tag}")
+          if not m:
+              print(
+                  f"::error::CHANGELOG.md has no '## [{tag}]' section. "
+                  f"Add release notes for this tag before releasing.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          print(m.group(1).strip())
           PY
           )
           {

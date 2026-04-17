@@ -9,6 +9,15 @@
 
 header('Content-Type: text/plain; charset=utf-8');
 
+// Only accept POST — the endpoint has side effects (downloads + installs),
+// so it must not be reachable via a link or img src.
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    http_response_code(405);
+    header('Allow: POST');
+    echo "method not allowed\n";
+    exit;
+}
+
 // -- CSRF -------------------------------------------------------------------
 //
 // Unraid stores the per-session CSRF token in /var/local/emhttp/var.ini as
@@ -17,7 +26,7 @@ header('Content-Type: text/plain; charset=utf-8');
 // timing side-channels.
 $var      = @parse_ini_file('/var/local/emhttp/var.ini');
 $expected = is_array($var) ? (string)($var['csrf_token'] ?? '') : '';
-$received = (string)($_POST['csrf_token'] ?? $_GET['csrf_token'] ?? '');
+$received = (string)($_POST['csrf_token'] ?? '');
 
 if ($expected === '' || !hash_equals($expected, $received)) {
     http_response_code(403);

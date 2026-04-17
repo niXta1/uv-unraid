@@ -97,7 +97,16 @@ function uv_update() {
     }).done(function (data) {
         log.textContent += data;
         log.scrollTop = log.scrollHeight;
-        setTimeout(function () { location.reload(); }, 1500);
+        // The install script's exit status is echoed as the last non-empty
+        // line of the response in the form "[exit N]". Only auto-reload if
+        // N is 0 — otherwise keep the log visible so the user can read it.
+        var match = data.match(/\[exit (-?\d+)\]\s*$/);
+        if (match && match[1] === '0') {
+            setTimeout(function () { location.reload(); }, 1500);
+        } else {
+            var code = match ? match[1] : '?';
+            log.textContent += '\n[uv] update failed (exit ' + code + '); page not reloaded.\n';
+        }
     }).fail(function (xhr) {
         log.textContent += '\nrequest failed: ' + xhr.status + ' ' + xhr.statusText;
     });

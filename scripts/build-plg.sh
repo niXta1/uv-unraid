@@ -95,41 +95,52 @@ sys.stdout.write(s)
 '
 }
 
-# extract_changes: pull the top-most "## [VERSION]" section out of
-# CHANGELOG.md and reformat it for the <CHANGES> block. "### Added"
-# subsection headers are stripped so the output contains bullets only
-# (Unraid's Plugin Manager already uses ### for the version header).
+# extract_changes: pull the "## [VERSION]" section out of CHANGELOG.md
+# matching the requested plugin version *exactly* (including any letter
+# suffix like 2026.04.16d) and reformat it for the <CHANGES> block.
+# "### Added" subsection headers become bold bullets so the Plugin
+# Manager's markdown renderer doesn't collide with Unraid's own
+# "###VERSION" convention.
+#
+# Exact match is required: a mismatch between the plg version and
+# CHANGELOG.md is a build-breaking error. This prevents silent drift
+# like "plg=2026.04.16d, <CHANGES>=###2026.04.16".
 extract_changes() {
   if [[ ! -f ${CHANGELOG} ]]; then
-    printf '###%s\n- see CHANGELOG.md\n' "${VERSION}"
-    return
+    echo "error: ${CHANGELOG} is required to build the plg" >&2
+    exit 1
   fi
-  python3 - "${CHANGELOG}" <<'PY'
+  python3 - "${CHANGELOG}" "${VERSION}" <<'PY'
 import re, sys, pathlib
 text = pathlib.Path(sys.argv[1]).read_text()
+target = sys.argv[2]
+escaped = re.escape(target)
 out = []
 started = False
 for ln in text.splitlines():
-    m = re.match(r"^## \[(?P<v>[0-9.]+)\]", ln)
+    m = re.match(rf"^## \[{escaped}\]", ln)
     if m:
-        if started:
-            break
         started = True
-        out.append("###" + m.group("v"))
+        out.append("###" + target)
         continue
     if not started:
         continue
-    if ln.startswith("## "):
+    # Any subsequent "## [" terminates our section.
+    if re.match(r"^## \[", ln):
         break
     if re.match(r"^### ", ln):
-        # Keep subsection title as a plain bullet header so the
-        # Plugin Manager's markdown renderer doesn't collide with
-        # Unraid's own "###VERSION" convention.
         title = ln[4:].strip()
         out.append("")
         out.append(f"**{title}**")
         continue
     out.append(ln)
+if not started:
+    print(
+        f"error: no CHANGELOG.md section for version {target!r}. "
+        f"Add a '## [{target}] - YYYY-MM-DD' header with the release notes.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 # collapse runs of blank lines
 cleaned = []
 blank = False

@@ -3,7 +3,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name       "uv">
 <!ENTITY author     "nixta1">
-<!ENTITY version    "2026.04.16d">
+<!ENTITY version    "2026.04.17">
 <!ENTITY launch     "Settings/uv">
 <!ENTITY gh         "https://github.com/nixta1/uv-unraid">
 <!ENTITY pluginURL  "https://raw.githubusercontent.com/nixta1/uv-unraid/main/plugins/&name;.plg">
@@ -27,18 +27,30 @@
 <CHANGES>
 ##&name;
 
-###2026.04.16
+###2026.04.17
 
 **Changed**
-- Compact plugin README to a single line so the Plugin Manager listing matches
-  the height of other plugins.
-- Fix menu path label: `Menu="OtherSettings"` renders as "User Utilities" in
-  the Unraid webGUI, not "Other Settings".
-- Drop `Run="/bin/true"` from `&lt;FILE Name&gt;` blocks and re-introduce `Mode=`
-  attribute, matching the idiomatic pattern used by v7 plugins (Joly0/par2protect,
-  Ac3sRwild/unraid-lsi-mon, bergware/dynamix).
-- Document versioning convention (`YYYY.MM.DD[a-z]`) based on survey of
-  community.applications, nvidia-driver, par2protect and tailscale plugins.
+- `update.php` now only accepts POST and no longer reads the CSRF token
+  from `$_GET`. The endpoint has side effects (downloads + installs) so
+  GET requests are rejected with `405 Method Not Allowed`.
+- Settings page only auto-reloads when the installer exits cleanly.
+  A non-zero exit keeps the log visible so the user can read the error.
+
+**Added**
+- SHA-256 verification of the downloaded uv tarball is now fail-closed.
+  If the `.sha256` file is missing or the hashes do not match, the
+  download is refused and the caller falls back to the cached (already
+  verified) binary. A warning-and-continue was a loophole that defeated
+  the purpose of the check.
+- `build-plg.sh` requires an exact `## [VERSION]` section in CHANGELOG.md
+  matching the plg's `&lt;!ENTITY version …&gt;` value. The generated
+  `&lt;CHANGES&gt;` block's `###VERSION` header now matches the plg version
+  byte-for-byte (previously it could silently drift, e.g. plg
+  `2026.04.16d` paired with `###2026.04.16`).
+- CI guard in `.github/workflows/validate.yml`: the plg version must
+  have a matching changelog section, and the release workflow fails
+  loudly if no exact section exists for the tag (instead of silently
+  falling back to a generic "Release X" body).
 </CHANGES>
 
 <!-- ==========================================================
@@ -117,6 +129,15 @@ function uv_cached_binary_exists(): bool {
 
 header('Content-Type: text/plain; charset=utf-8');
 
+// Only accept POST — the endpoint has side effects (downloads + installs),
+// so it must not be reachable via a link or img src.
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    http_response_code(405);
+    header('Allow: POST');
+    echo "method not allowed\n";
+    exit;
+}
+
 // -- CSRF -------------------------------------------------------------------
 //
 // Unraid stores the per-session CSRF token in /var/local/emhttp/var.ini as
@@ -125,7 +146,7 @@ header('Content-Type: text/plain; charset=utf-8');
 // timing side-channels.
 $var      = @parse_ini_file('/var/local/emhttp/var.ini');
 $expected = is_array($var) ? (string)($var['csrf_token'] ?? '') : '';
-$received = (string)($_POST['csrf_token'] ?? $_GET['csrf_token'] ?? '');
+$received = (string)($_POST['csrf_token'] ?? '');
 
 if ($expected === '' || !hash_equals($expected, $received)) {
     http_response_code(403);
@@ -283,21 +304,27 @@ download_and_cache() {
     return 1
   fi
 
+  # SHA-256 verification is fail-closed for fresh downloads. If the
+  # checksum file is missing or the hash does not match, we refuse to
+  # install the downloaded tarball — the cached (previously-verified)
+  # binary will be used as a fallback by the caller.
   log "verifying SHA-256 checksum"
-  if curl -fsSL --max-time 15 -o "${tmp}/${ARCH_TARBALL}.sha256" "${sha_url}"; then
-    # The .sha256 file contains: &lt;hash&gt;  &lt;filename&gt;
-    local expected
-    expected=$(awk '{print $1}' "${tmp}/${ARCH_TARBALL}.sha256")
-    local actual
-    actual=$(sha256sum "${tmp}/${ARCH_TARBALL}" | awk '{print $1}')
-    if [[ "${expected}" != "${actual}" ]]; then
-      err "checksum mismatch: expected ${expected}, got ${actual}"
-      return 1
-    fi
-    log "checksum ok"
-  else
-    log "warning: could not download checksum file, skipping verification"
+  if ! curl -fsSL --max-time 15 -o "${tmp}/${ARCH_TARBALL}.sha256" "${sha_url}"; then
+    err "could not download checksum file from ${sha_url}"
+    return 1
   fi
+  local expected actual
+  expected=$(awk '{print $1}' "${tmp}/${ARCH_TARBALL}.sha256")
+  actual=$(sha256sum "${tmp}/${ARCH_TARBALL}" | awk '{print $1}')
+  if [[ -z ${expected} ]]; then
+    err "checksum file was empty or unparseable"
+    return 1
+  fi
+  if [[ "${expected}" != "${actual}" ]]; then
+    err "checksum mismatch: expected ${expected}, got ${actual}"
+    return 1
+  fi
+  log "checksum ok"
 
   if ! tar -xzf "${tmp}/${ARCH_TARBALL}" -C "${tmp}"; then
     err "extraction failed"
@@ -490,7 +517,16 @@ function uv_update() {
     }).done(function (data) {
         log.textContent += data;
         log.scrollTop = log.scrollHeight;
-        setTimeout(function () { location.reload(); }, 1500);
+        // The install script's exit status is echoed as the last non-empty
+        // line of the response in the form "[exit N]". Only auto-reload if
+        // N is 0 — otherwise keep the log visible so the user can read it.
+        var match = data.match(/\[exit (-?\d+)\]\s*$/);
+        if (match &amp;&amp; match[1] === '0') {
+            setTimeout(function () { location.reload(); }, 1500);
+        } else {
+            var code = match ? match[1] : '?';
+            log.textContent += '\n[uv] update failed (exit ' + code + '); page not reloaded.\n';
+        }
     }).fail(function (xhr) {
         log.textContent += '\nrequest failed: ' + xhr.status + ' ' + xhr.statusText;
     });

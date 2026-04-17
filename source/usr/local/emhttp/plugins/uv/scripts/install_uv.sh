@@ -109,21 +109,27 @@ download_and_cache() {
     return 1
   fi
 
+  # SHA-256 verification is fail-closed for fresh downloads. If the
+  # checksum file is missing or the hash does not match, we refuse to
+  # install the downloaded tarball — the cached (previously-verified)
+  # binary will be used as a fallback by the caller.
   log "verifying SHA-256 checksum"
-  if curl -fsSL --max-time 15 -o "${tmp}/${ARCH_TARBALL}.sha256" "${sha_url}"; then
-    # The .sha256 file contains: <hash>  <filename>
-    local expected
-    expected=$(awk '{print $1}' "${tmp}/${ARCH_TARBALL}.sha256")
-    local actual
-    actual=$(sha256sum "${tmp}/${ARCH_TARBALL}" | awk '{print $1}')
-    if [[ "${expected}" != "${actual}" ]]; then
-      err "checksum mismatch: expected ${expected}, got ${actual}"
-      return 1
-    fi
-    log "checksum ok"
-  else
-    log "warning: could not download checksum file, skipping verification"
+  if ! curl -fsSL --max-time 15 -o "${tmp}/${ARCH_TARBALL}.sha256" "${sha_url}"; then
+    err "could not download checksum file from ${sha_url}"
+    return 1
   fi
+  local expected actual
+  expected=$(awk '{print $1}' "${tmp}/${ARCH_TARBALL}.sha256")
+  actual=$(sha256sum "${tmp}/${ARCH_TARBALL}" | awk '{print $1}')
+  if [[ -z ${expected} ]]; then
+    err "checksum file was empty or unparseable"
+    return 1
+  fi
+  if [[ "${expected}" != "${actual}" ]]; then
+    err "checksum mismatch: expected ${expected}, got ${actual}"
+    return 1
+  fi
+  log "checksum ok"
 
   if ! tar -xzf "${tmp}/${ARCH_TARBALL}" -C "${tmp}"; then
     err "extraction failed"

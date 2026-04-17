@@ -10,6 +10,31 @@ manager compares versions lexicographically (`strcmp`), so the suffix sorts corr
 The upstream `uv` version is tracked separately (on the Settings page and in
 `/boot/config/plugins/uv/version`), not embedded in the plugin version string.
 
+## [2026.04.17] - 2026-04-17
+
+### Changed
+- `update.php` now only accepts POST and no longer reads the CSRF token
+  from `$_GET`. The endpoint has side effects (downloads + installs) so
+  GET requests are rejected with `405 Method Not Allowed`.
+- Settings page only auto-reloads when the installer exits cleanly.
+  A non-zero exit keeps the log visible so the user can read the error.
+
+### Added
+- SHA-256 verification of the downloaded uv tarball is now fail-closed.
+  If the `.sha256` file is missing or the hashes do not match, the
+  download is refused and the caller falls back to the cached (already
+  verified) binary. A warning-and-continue was a loophole that defeated
+  the purpose of the check.
+- `build-plg.sh` requires an exact `## [VERSION]` section in CHANGELOG.md
+  matching the plg's `<!ENTITY version …>` value. The generated
+  `<CHANGES>` block's `###VERSION` header now matches the plg version
+  byte-for-byte (previously it could silently drift, e.g. plg
+  `2026.04.16d` paired with `###2026.04.16`).
+- CI guard in `.github/workflows/validate.yml`: the plg version must
+  have a matching changelog section, and the release workflow fails
+  loudly if no exact section exists for the tag (instead of silently
+  falling back to a generic "Release X" body).
+
 ## [2026.04.16] - 2026-04-16
 
 ### Changed
